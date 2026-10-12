@@ -49,7 +49,9 @@ class FitPanel(QGroupBox):
         self._color = QColor("#ffffff")
         self.color_btn = QPushButton()
         self.color_btn.setFixedWidth(80)
+        self.color_btn.setToolTip("Bar color. Also fills transparent areas when saving as JPEG.")
         self.transparent = QCheckBox("Transparent (PNG/WebP)")
+        self.transparent.setToolTip("PNG/WebP keep transparency; JPEG uses the pad color instead.")
         pad_row = QHBoxLayout()
         pad_row.addWidget(self.color_btn)
         pad_row.addWidget(self.transparent)
@@ -82,7 +84,7 @@ class FitPanel(QGroupBox):
     def _update_enabled(self) -> None:
         pad = self.pad.isChecked()
         self.transparent.setEnabled(pad)
-        self.color_btn.setEnabled(pad and not self.transparent.isChecked())
+        self.color_btn.setEnabled(pad)
 
     def load(self, s: FitSettings) -> None:
         (self.pad if s.mode == "pad" else self.crop).setChecked(True)

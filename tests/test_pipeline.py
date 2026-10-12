@@ -170,3 +170,57 @@ def test_planned_size_matches_actual(tmp_path):
         res = Pipeline(p, FakeEngine(tmp_path / fit)).process(tmp_path / "a.png")
         actual = sorted(Image.open(o).size for o in res.outputs)
         assert actual == sorted(planned_size(300, 200, r, fit, 4) for r in p.ratios)
+
+
+def _close(a, b, tol=12):
+    return all(abs(x - y) <= tol for x, y in zip(a, b))
+
+
+def _padded(tmp_path, fmt, pad_color=None):
+    Image.new("RGB", (200, 100), (0, 0, 255)).save(tmp_path / "wide.png")
+    p = make_preset(tmp_path / f"out-{fmt}", format=fmt)
+    p.upscale.enabled = False
+    p.ratios = [RatioSpec("1:1")]
+    p.fit.mode = "pad"
+    p.fit.pad_transparent = True
+    if pad_color:
+        p.fit.pad_color = pad_color
+    res = Pipeline(p).process(tmp_path / "wide.png")
+    assert res.error is None, res.error
+    return Image.open(res.outputs[0])
+
+
+def test_transparent_pad_jpeg_uses_default_white_not_black(tmp_path):
+    with _padded(tmp_path, "jpg") as im:
+        assert im.size == (200, 200)
+        assert _close(im.getpixel((100, 10)), (255, 255, 255))  # bar
+        assert _close(im.getpixel((100, 100)), (0, 0, 255))  # image
+
+
+def test_transparent_pad_jpeg_uses_chosen_color(tmp_path):
+    with _padded(tmp_path, "jpg", "#ff0000") as im:
+        assert _close(im.getpixel((100, 10)), (255, 0, 0))
+
+
+def test_transparent_pad_png_keeps_alpha(tmp_path):
+    with _padded(tmp_path, "png", "#ff0000") as im:
+        assert im.mode == "RGBA" and im.getpixel((100, 10))[3] == 0
+
+
+def test_rgba_source_to_jpeg_composites_over_pad_color(tmp_path):
+    Image.new("RGBA", (100, 100), (0, 0, 0, 0)).save(tmp_path / "clear.png")
+    p = make_preset(tmp_path / "out", format="jpg")
+    p.upscale.enabled = False
+    p.ratios = [RatioSpec("1:1")]
+    p.fit.pad_color = "#00ff00"
+    res = Pipeline(p).process(tmp_path / "clear.png")
+    with Image.open(res.outputs[0]) as im:
+        assert _close(im.getpixel((50, 50)), (0, 255, 0))
+
+
+def test_fill_rgba_is_always_opaque():
+    fit = config.FitSettings(pad_color="#123456")
+    assert fit.fill_rgba() == (0x12, 0x34, 0x56, 255)
+    fit.pad_transparent = True
+    assert fit.fill_rgba() == (0x12, 0x34, 0x56, 255)
+    assert fit.pad_rgba() == (0, 0, 0, 0)

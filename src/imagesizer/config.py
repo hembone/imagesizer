@@ -47,8 +47,10 @@ class FitSettings:
     pad_transparent: bool = False
 
     def pad_rgba(self) -> tuple[int, int, int, int]:
-        if self.pad_transparent:
-            return (0, 0, 0, 0)
+        return (0, 0, 0, 0) if self.pad_transparent else self.fill_rgba()
+
+    def fill_rgba(self) -> tuple[int, int, int, int]:
+        """The pad color, opaque even when padding is transparent: the fill for formats without alpha (JPEG)."""
         c = self.pad_color.lstrip("#")
         return int(c[0:2], 16), int(c[2:4], 16), int(c[4:6], 16), 255
 
@@ -84,6 +86,7 @@ class Settings:
     presets: dict[str, Preset] = field(default_factory=dict)
     engine_binary: str = ""  # override; empty = default download location
     engine_models_dir: str = ""
+    engine_prompt_dismissed: bool = False  # user chose "Later" on the first-run download offer
 
     def __post_init__(self):
         if not self.current.output.directory:

@@ -20,71 +20,110 @@ ImageSizer/                      ← output folder you choose
 
 Everything runs locally. Nothing is uploaded. The internet is used only once, to download the upscaling engine.
 
+### ⬇ [Download the latest version](https://github.com/hembone/imagesizer/releases/latest)
+
+Windows installer · macOS disk image (Apple Silicon or Intel) · Linux AppImage. You don't need Python or any other setup. See [Download](#download) for step-by-step instructions.
+
 ---
 
 ## Contents
 
+- [Download](#download)
 - [Requirements](#requirements)
-- [Installation](#installation)
 - [First run: installing the upscaling engine](#first-run-installing-the-upscaling-engine)
+- [Updating](#updating)
 - [Using the app](#using-the-app)
 - [Naming templates](#naming-templates)
 - [Presets](#presets)
 - [Command line](#command-line)
 - [Where files are stored](#where-files-are-stored)
 - [Troubleshooting](#troubleshooting)
+- [Running from source](#running-from-source)
 - [Development](#development)
 - [Credits and licenses](#credits-and-licenses)
 
 ---
 
+## Download
+
+Go to the **[latest release](https://github.com/hembone/imagesizer/releases/latest)** and download the file for your computer from the *Assets* list:
+
+| Your computer | Download |
+|---|---|
+| Windows 10 / 11 | `ImageSizer-<version>-Windows-Setup.exe` |
+| Mac with Apple Silicon (M1, M2, M3, M4…) | `ImageSizer-<version>-macOS-arm64.dmg` |
+| Mac with an Intel processor | `ImageSizer-<version>-macOS-x86_64.dmg` |
+| Linux (64-bit, most distributions) | `ImageSizer-<version>-x86_64.AppImage` |
+
+> **Which Mac do I have?** Open the Apple menu  → **About This Mac**. *Chip: Apple M…* means Apple Silicon. *Processor: Intel…* means Intel.
+
+The apps aren't code-signed yet (signing costs money every year), so Windows and macOS warn you the first time. The steps below show how to get past the warning once.
+
+### Windows
+
+1. Run **`ImageSizer-…-Windows-Setup.exe`**.
+2. If a blue **"Windows protected your PC"** box appears, click **More info → Run anyway**.
+3. Click through the installer. You don't need administrator rights. ImageSizer installs for your user account only, and you can tick *Create a desktop shortcut*.
+4. Start **ImageSizer** from the Start menu.
+
+To uninstall, go to **Settings → Apps → Installed apps → ImageSizer → Uninstall**.
+
+### macOS
+
+1. Open **`ImageSizer-…-macOS-….dmg`**.
+2. Drag **ImageSizer** onto the **Applications** folder in the window that opens.
+3. The first time, open your **Applications** folder, **right-click** ImageSizer and choose **Open**, then **Open** again.
+   On recent macOS versions you may instead get a box with only *Done* / *Move to Trash*. If so, click **Done**, go to **System Settings → Privacy & Security**, scroll down, click **Open Anyway** next to the ImageSizer message, and confirm.
+4. After that, open it normally from Launchpad, Spotlight or the Dock.
+
+To uninstall, drag **ImageSizer** from Applications to the Trash.
+
+### Linux
+
+1. Download **`ImageSizer-…-x86_64.AppImage`**.
+2. Make it executable. In your file manager, **right-click → Properties → Permissions → Allow executing file as program**. Or in a terminal:
+   ```bash
+   chmod +x ImageSizer-*-x86_64.AppImage
+   ```
+3. Double-click it, or run `./ImageSizer-*-x86_64.AppImage`.
+
+AppImages run without being installed and include everything they need, so there is nothing to `apt install`. To add ImageSizer to your applications menu, you can use [Gear Lever](https://flathub.org/apps/it.mijorus.gearlever) or [AppImageLauncher](https://github.com/TheAssassin/AppImageLauncher) (optional). To uninstall, delete the file.
+
 ## Requirements
 
 | | |
 |---|---|
-| **Python** | 3.11 or newer (only needed if you run from source) |
+| **OS** | Windows 10/11 (64-bit), macOS 12 or newer, or 64-bit Linux from roughly 2022 onwards (glibc 2.35+, e.g. Ubuntu 22.04, Fedora 36, Debian 12). |
 | **GPU** | Upscaling needs one that supports **Vulkan**: most NVIDIA, AMD and Intel GPUs from the last ~8 years, and Apple Silicon or recent Intel Macs (through Metal). Without one you can still crop and resize, just not upscale. |
-| **Disk** | ~215 MB for the engine and all models, plus room for your output. Upscaled images are large: 4× makes an image 16 times as many pixels. |
-| **Linux only** | Qt needs the `libxcb-cursor0` package on X11: `sudo apt install libxcb-cursor0` (Debian/Ubuntu) or `sudo dnf install xcb-util-cursor` (Fedora). |
-
-## Installation
-
-### From a release build
-
-CI builds a standalone app for each OS: `ImageSizer-Linux`, `ImageSizer-Windows` and `ImageSizer-macOS`. Download the one for your OS from the latest successful CI run (or a release), unzip it and run `ImageSizer`, `ImageSizer.exe` or `ImageSizer.app`. You don't need Python.
-
-### From source
-
-**Linux / macOS**
-```bash
-git clone <this repo> imagesizer && cd imagesizer
-python3 -m venv .venv
-.venv/bin/pip install -e .
-.venv/bin/imagesizer
-```
-
-**Windows (PowerShell)**
-```powershell
-git clone <this repo> imagesizer; cd imagesizer
-py -m venv .venv
-.venv\Scripts\pip install -e .
-.venv\Scripts\imagesizer
-```
-
-You can also pass files or folders when you launch it, and they are added to the list straight away:
-```bash
-.venv/bin/imagesizer ~/Pictures/holiday photo1.jpg
-```
+| **Disk** | About 200 MB for the app, about 215 MB for the upscaling engine and models, plus room for your output. Upscaled images are large: 4× makes an image 16 times as many pixels. |
+| **Internet** | Only to download the app and, once, the upscaling engine. |
 
 ## First run: installing the upscaling engine
 
-The upscaler is a separate program, `upscayl-bin`, plus a set of model files. They aren't included in the app, so the first time:
+The upscaler is a separate program, `upscayl-bin`, plus a set of model files. To keep the download small, they aren't included in the app.
 
-1. Find the **Upscale (Upscayl)** panel. It will say *Engine not installed*.
-2. Click **Download engine**. The app downloads the latest `upscayl-bin` for your OS from GitHub, then all 7 Upscayl models. Progress appears at the bottom of the window. Clicking the button again cancels.
-3. When the panel says *Engine ready · 7 models*, you can start upscaling.
+The first time you open ImageSizer, it asks:
+
+> *Download the AI upscaling engine now? (about 215 MB, one time)*
+
+Click **Download**. Progress appears at the bottom of the window, and when it finishes the Upscale panel says *Engine ready · 7 models*.
+
+If you click **Later**, you won't be asked again. You can still:
+
+- click **Download engine** in the **Upscale (Upscayl)** panel at any time (click it again to cancel), or
+- use the app without upscaling: untick *Upscale before resizing* and it will crop and resize only.
 
 **Already have Upscayl installed?** Click **Engine paths…** and point it at Upscayl's `upscayl-bin` and its `models` folder. Then you don't need to download anything. You can also put extra ncnn models (`.param` + `.bin` pairs) in the models folder and they'll appear in the model list.
+
+## Updating
+
+Download the new version from the [latest release](https://github.com/hembone/imagesizer/releases/latest) and install it the same way:
+
+- **Windows:** run the new Setup.exe. It replaces the old version.
+- **macOS:** drag the new ImageSizer into Applications and choose **Replace**.
+- **Linux:** delete the old AppImage and use the new one.
+
+Your settings, presets and the downloaded upscaling engine are kept. They are stored separately from the app (see [Where files are stored](#where-files-are-stored)). The window title shows which version you're running.
 
 ## Using the app
 
@@ -210,7 +249,9 @@ Separately from presets, your **current settings are saved automatically** and r
 
 ## Command line
 
-`imagesizer-cli` runs the same pipeline without the GUI, which is useful for scripts and automation. It uses your saved settings as the starting point.
+`imagesizer-cli` runs the same pipeline without the GUI, which is useful for scripts and automation. It uses your saved settings (from the GUI) as the starting point.
+
+> The command line comes with the [source install](#running-from-source). The downloadable installers contain only the GUI.
 
 ```bash
 # Upscale a folder 4x, then make 1:1, 4:5 (long edge 2048) and 16:9 (exactly 1920x1080)
@@ -258,8 +299,19 @@ To reset all settings, delete `settings.json`. To uninstall the engine, delete t
 
 ## Troubleshooting
 
-**Linux: "Could not load the Qt platform plugin xcb"**
-Install the missing library: `sudo apt install libxcb-cursor0` (Fedora: `xcb-util-cursor`).
+**Windows: "Windows protected your PC"**
+This is SmartScreen warning about an app that isn't code-signed. Click **More info → Run anyway**. You only need to do this for the installer.
+
+**macOS: "ImageSizer can't be opened" / "Apple could not verify…"**
+The app isn't signed with an Apple developer certificate. Right-click ImageSizer in Applications and choose **Open**. If that doesn't offer an *Open* button, go to **System Settings → Privacy & Security** and click **Open Anyway** next to the ImageSizer message. You only need to do this once per version.
+
+**Linux: the AppImage doesn't start**
+- Make sure it's executable (`chmod +x ImageSizer-*.AppImage`, or *Properties → Allow executing*).
+- Run it from a terminal to see the error message.
+- On distributions older than about 2022 (glibc below 2.35) it can fail with `GLIBC_2.35 not found`. Use the [source install](#running-from-source) instead.
+
+**Linux, source install: "Could not load the Qt platform plugin xcb"**
+Install the missing library: `sudo apt install libxcb-cursor0` (Fedora: `sudo dnf install xcb-util-cursor`). The AppImage already includes it.
 
 **"upscayl-bin failed" / "No usable Vulkan GPU was found"**
 - Update your graphics drivers. On Linux, make sure the Vulkan driver is installed (`mesa-vulkan-drivers` for Intel/AMD; the proprietary driver for NVIDIA). `vulkaninfo --summary` should list your GPU.
@@ -270,14 +322,39 @@ Install the missing library: `sudo apt install libxcb-cursor0` (Fedora: `xcb-uti
 **The engine download fails**
 It downloads from GitHub, so check that `github.com` and `raw.githubusercontent.com` are reachable. Alternatively, download `upscayl-bin` for your OS from [upscayl-ncnn releases](https://github.com/upscayl/upscayl-ncnn/releases) and the models from [Upscayl's models folder](https://github.com/upscayl/upscayl/tree/main/resources/models), then set them under **Engine paths…**.
 
-**macOS: "ImageSizer can't be opened"**
-The app build isn't signed. Right-click it and choose **Open** the first time, or allow it under *System Settings → Privacy & Security*.
-
 **Upscaling is very slow**
 That's normal on integrated graphics. Use the **Upscayl Lite** model, a lower **Scale**, or turn upscaling off for images that are already large.
 
 **Transparent areas turned a solid color**
-JPEG has no transparency, so transparent pixels are filled with the pad color. Use PNG or WebP to keep transparency.
+JPEG has no transparency, so transparent pixels are filled with the pad color (white unless you change it, even when Transparent is ticked). Use PNG or WebP to keep transparency.
+
+## Running from source
+
+Use this route for development, to get the [command line](#command-line), or on a platform without a download. It needs **Python 3.11 or newer**.
+
+**Linux / macOS**
+```bash
+git clone https://github.com/hembone/imagesizer.git && cd imagesizer
+python3 -m venv .venv
+.venv/bin/pip install -e .
+.venv/bin/imagesizer            # GUI
+.venv/bin/imagesizer-cli -h     # command line
+```
+
+**Windows (PowerShell)**
+```powershell
+git clone https://github.com/hembone/imagesizer.git; cd imagesizer
+py -m venv .venv
+.venv\Scripts\pip install -e .
+.venv\Scripts\imagesizer
+```
+
+On **Linux** a source install also needs Qt's `libxcb-cursor0` library: `sudo apt install libxcb-cursor0` (Fedora: `xcb-util-cursor`).
+
+You can also pass files or folders when you launch it, and they are added to the list straight away:
+```bash
+.venv/bin/imagesizer ~/Pictures/holiday photo1.jpg
+```
 
 ## Development
 
@@ -285,6 +362,7 @@ JPEG has no transparency, so transparent pixels are filled with the pad color. U
 .venv/bin/pip install -e ".[dev]"
 .venv/bin/pytest                                  # all tests; GUI tests run offscreen
 .venv/bin/pyinstaller packaging/imagesizer.spec   # standalone app in dist/ImageSizer
+packaging/linux/make_appimage.sh 0.1.0            # Linux: wrap dist/ImageSizer into an AppImage
 ```
 
 Project layout:
@@ -297,10 +375,30 @@ src/imagesizer/
   engine/              upscayl-bin download, location and execution
   processing/          ratios, crop/pad/resize math, naming, per-image pipeline
   gui/                 Qt (PySide6) window, panels, preview, background workers
+  resources/icon.png   app icon
 tests/                 pytest suite
-packaging/             PyInstaller spec
-.github/workflows/     CI: tests and builds on Ubuntu, Windows and macOS
+packaging/
+  imagesizer.spec      PyInstaller build (all OSes)
+  make_icons.py        regenerates icon.png / icon.ico / icon.icns
+  windows/             Inno Setup script → Setup.exe
+  macos/               make_dmg.sh → .dmg
+  linux/               make_appimage.sh + .desktop entry → .AppImage
+.github/workflows/
+  ci.yml               tests on Ubuntu, Windows and macOS for every push / PR
+  release.yml          builds the installers and publishes a GitHub Release for version tags
 ```
+
+### Making a release
+
+1. Bump `version` in `pyproject.toml` (e.g. `0.2.0`) and commit.
+2. Tag and push:
+   ```bash
+   git tag v0.2.0
+   git push origin v0.2.0
+   ```
+3. The **Release** workflow tests and builds on Windows, macOS (Apple Silicon and Intel) and Linux. It then publishes a GitHub Release with the four installers attached. This takes about 15 minutes.
+
+The tag must match the version in `pyproject.toml`, or the build stops with an error. A tag with a suffix, such as `v0.2.0-rc1`, is published as a **pre-release**. That's useful for testing the installers before announcing a version. To build the installers without publishing anything, run the Release workflow manually from the *Actions* tab. The files then appear as workflow artifacts.
 
 ## Credits and licenses
 

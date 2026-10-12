@@ -231,7 +231,7 @@ class Pipeline:
             result.skipped.append(f"{name + ext} already exists")
             return
         claimed.add(path)
-        save_image(img, path, fmt, self.preset.output.quality, self.preset.fit.pad_rgba(), **meta)
+        save_image(img, path, fmt, self.preset.output.quality, self.preset.fit.fill_rgba(), **meta)
         result.outputs.append(path)
 
 

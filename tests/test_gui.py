@@ -71,3 +71,37 @@ def test_resize_only_run(window, tmp_path, qapp):
     outs = sorted(p.name for p in (tmp_path / "out" / "a").iterdir())
     assert outs == ["a_16x9_300x169.png", "a_1x1_200x200.png", "a_4x5_160x200.png"]
     assert window.status.text().startswith("Finished")
+
+
+@pytest.mark.parametrize("ready,dismissed,answer,expect_ask,expect_download", [
+    (True, False, True, False, False),    # engine installed: never ask
+    (False, True, True, False, False),    # user said "Later" before: don't nag
+    (False, False, True, True, True),     # first run, accepts
+    (False, False, False, True, False),   # first run, declines
+])
+def test_first_run_engine_prompt(window, tmp_path, monkeypatch, ready, dismissed, answer, expect_ask,
+                                 expect_download):
+    from imagesizer import config
+    from imagesizer.engine.upscayl import Engine
+
+    window.engine = Engine(tmp_path / "bin", tmp_path / "models")
+    if ready:
+        window.engine.binary.touch()
+        window.engine.models_dir.mkdir()
+        for ext in ("param", "bin"):
+            (window.engine.models_dir / f"m.{ext}").touch()
+    window.settings.engine_prompt_dismissed = dismissed
+    asked, downloaded = [], []
+    monkeypatch.setattr(window, "_ask_engine_download", lambda: asked.append(1) or answer)
+    monkeypatch.setattr(window, "_download_engine", lambda: downloaded.append(1))
+    window.offer_engine_download()
+    assert bool(asked) == expect_ask
+    assert bool(downloaded) == expect_download
+    if expect_ask and not answer:
+        assert config.load().engine_prompt_dismissed  # remembered across launches
+
+
+def test_window_title_has_version(window):
+    from imagesizer import __version__
+
+    assert window.windowTitle() == f"ImageSizer {__version__}" and __version__ != "dev"

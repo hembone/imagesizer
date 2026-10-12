@@ -11,7 +11,7 @@ from PySide6.QtWidgets import (
     QScrollArea, QSplitter, QStyle, QVBoxLayout, QWidget,
 )
 
-from .. import config
+from .. import __version__, config
 from ..engine import platform
 from ..engine.upscayl import Engine, default_engine_dir
 from ..processing.naming import TemplateError
@@ -109,7 +109,7 @@ class EngineDialog(QDialog):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("ImageSizer")
+        self.setWindowTitle(f"ImageSizer {__version__}")
         self.settings = config.load()
         self.engine = self._make_engine()
         self.worker: BatchWorker | None = None
@@ -234,6 +234,27 @@ class MainWindow(QMainWindow):
         self.upscale_panel.download.setText("Cancel download")
         self.run_btn.setEnabled(False)
         self.downloader.start()
+
+    def offer_engine_download(self) -> None:
+        """First-run convenience: offer to fetch the engine instead of making people find the button."""
+        if self.engine.ready or self.settings.engine_prompt_dismissed or self.downloader is not None:
+            return
+        if self._ask_engine_download():
+            self._download_engine()
+        else:
+            self.settings.engine_prompt_dismissed = True
+            self._save()
+
+    def _ask_engine_download(self) -> bool:
+        box = QMessageBox(QMessageBox.Icon.Question, "Upscaling engine",
+                          "Download the AI upscaling engine now?\n\n"
+                          "It's about 215 MB and only needs to be downloaded once. You can also do this later "
+                          "with “Download engine” in the Upscale panel, or crop and resize without it.", parent=self)
+        download = box.addButton("Download", QMessageBox.ButtonRole.AcceptRole)
+        box.addButton("Later", QMessageBox.ButtonRole.RejectRole)
+        box.setDefaultButton(download)
+        box.exec()
+        return box.clickedButton() is download
 
     def _download_progress(self, msg: str, frac: float) -> None:
         self.status.setText(msg)
@@ -362,7 +383,9 @@ class MainWindow(QMainWindow):
         fit = self.settings.current.fit
         label = self.preview_ratio.currentData()
         ratio = Ratio.parse(label) if label else None
-        color = None if fit.pad_transparent else QColor(fit.pad_color)
+        # JPEG can't keep transparency, so show the color the bars will actually get
+        transparent = fit.pad_transparent and self.settings.current.output.format != "jpg"
+        color = None if transparent else QColor(fit.pad_color)
         self.preview.set_overlay(ratio, fit.mode, fit.anchor, color)
 
     def _update_names(self) -> None:

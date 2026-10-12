@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=ImageSizer
+GenericName=Batch Image Resizer
+Comment=Batch upscale images and resize them to aspect ratios
+Exec=ImageSizer %F
+Icon=imagesizer
+Terminal=false
+Categories=Graphics;RasterGraphics;
+MimeType=image/png;image/jpeg;image/webp;image/bmp;image/tiff;image/gif;
+Keywords=upscale;resize;crop;aspect;ratio;batch;
