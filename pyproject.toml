@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "imagesizer"
+version = "0.1.0"
+description = "Batch upscale (Upscayl) and resize images to selected aspect ratios"
+requires-python = ">=3.11"
+dependencies = [
+    "PySide6>=6.6",
+    "Pillow>=10.0",
+    "platformdirs>=4.0",
+    "certifi",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "pyinstaller>=6"]
+
+[project.scripts]
+imagesizer-cli = "imagesizer.cli:main"
+
+[project.gui-scripts]
+imagesizer = "imagesizer.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
