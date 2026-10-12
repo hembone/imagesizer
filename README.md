@@ -396,9 +396,9 @@ packaging/
    git tag v0.2.0
    git push origin v0.2.0
    ```
-3. The **Release** workflow tests and builds on Windows, macOS (Apple Silicon and Intel) and Linux. It then publishes a GitHub Release with the four installers attached. This takes about 15 minutes.
+3. The **Release** workflow tests and builds on Windows, macOS (Apple Silicon and Intel) and Linux. It then publishes a GitHub Release with the four installers attached. This takes about 3–5 minutes.
 
-The tag must match the version in `pyproject.toml`, or the build stops with an error. A tag with a suffix, such as `v0.2.0-rc1`, is published as a **pre-release**. That's useful for testing the installers before announcing a version. To build the installers without publishing anything, run the Release workflow manually from the *Actions* tab. The files then appear as workflow artifacts.
+The tag must match the version in `pyproject.toml`, or the build stops with an error. A suffix after a hyphen is allowed: `v0.2.0-rc1` matches version `0.2.0`, and it's published as a **pre-release**. The installers' file names and the app's window title both show the full tag version (e.g. *ImageSizer 0.2.0-rc1*). That's useful for testing the installers before announcing a version. To build the installers without publishing anything, run the Release workflow manually from the *Actions* tab. The files then appear as workflow artifacts.
 
 ## Credits and licenses
 
