@@ -92,6 +92,24 @@ def target_size(w: int, h: int, ratio: Ratio, size: SizeSpec) -> tuple[int, int]
     return w, h
 
 
+def has_alpha(img: Image.Image) -> bool:
+    """True for alpha modes and for palette/L/RGB images with a transparent color key."""
+    return img.mode in ("RGBA", "LA", "PA") or (img.mode in ("P", "L", "RGB") and "transparency" in img.info)
+
+
+def to_8bit(img: Image.Image) -> Image.Image:
+    """Bring 16/32-bit grayscale down to 8-bit L; Pillow's own conversion just clips everything above 255."""
+    if img.mode.startswith("I;16"):
+        return img.convert("I").point(lambda v: v / 256).convert("L")
+    if img.mode in ("I", "F"):
+        lo, hi = img.getextrema()
+        if hi <= lo:
+            return Image.new("L", img.size, 0 if hi <= 0 else 255)
+        f = img.convert("F")
+        return f.point(lambda v: (v - lo) * 255 / (hi - lo)).convert("L")
+    return img
+
+
 def fit_image(
     img: Image.Image,
     ratio: Ratio,
@@ -106,11 +124,17 @@ def fit_image(
         fitted = img.crop(crop_box(img.width, img.height, ratio, anchor))
     else:
         cw, ch, ox, oy = pad_layout(img.width, img.height, ratio, anchor)
+        alpha = has_alpha(img)
         mode = "RGBA" if (img.mode in ("RGBA", "LA", "PA") or len(pad_color) == 4 and pad_color[3] < 255) else "RGB"
         color = pad_color if mode == "RGBA" else pad_color[:3]
         fitted = Image.new(mode, (cw, ch), color)
-        src = img.convert(mode) if img.mode != mode else img
-        fitted.paste(src, (ox, oy), src if mode == "RGBA" else None)
+        if mode == "RGBA":  # composite, so semi-transparent pixels keep their alpha over a transparent canvas
+            fitted.alpha_composite(img if img.mode == "RGBA" else img.convert("RGBA"), (ox, oy))
+        elif alpha:  # paste through the alpha so transparent pixels take the pad color, not their palette color
+            src = img.convert("RGBA")
+            fitted.paste(src.convert("RGB"), (ox, oy), src.getchannel("A"))
+        else:
+            fitted.paste(img.convert(mode) if img.mode != mode else img, (ox, oy))
     out_size = target_size(fitted.width, fitted.height, ratio, size)
     if out_size != fitted.size:
         fitted = fitted.resize(out_size, Image.Resampling.LANCZOS)

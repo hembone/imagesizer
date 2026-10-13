@@ -138,9 +138,15 @@ class Engine:
                     if member is None:
                         raise EngineError(f"{platform.exe_name()} not found in {asset['name']}")
                     self.binary.parent.mkdir(parents=True, exist_ok=True)
-                    with z.open(member) as src, open(self.binary, "wb") as dst:
-                        shutil.copyfileobj(src, dst)
-            platform.make_executable(self.binary)
+                    # extract beside the target and rename at the end, so a half-written binary never looks installed
+                    part = self.binary.with_name(self.binary.name + ".part")
+                    try:
+                        with z.open(member) as src, open(part, "wb") as dst:
+                            shutil.copyfileobj(src, dst)
+                        platform.make_executable(part)
+                        part.replace(self.binary)
+                    finally:
+                        part.unlink(missing_ok=True)
 
         for i, name in enumerate(models):
             for j, ext in enumerate(("param", "bin")):

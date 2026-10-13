@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 from dataclasses import asdict, dataclass, field, fields, is_dataclass
 from pathlib import Path
 from typing import Any, get_args, get_origin, get_type_hints
@@ -93,30 +94,71 @@ class Settings:
             self.current.output.directory = str(Path(user_pictures_dir()) / "ImageSizer")
 
 
-def _from_dict(cls, data: Any):
-    """Build a dataclass from JSON data, ignoring unknown keys and keeping defaults for missing ones."""
+_SCALARS = (bool, int, float, str)
+
+
+def _from_dict(cls, data: Any, problems: list[str] | None = None, where: str = ""):
+    """Build a dataclass from JSON data, ignoring unknown keys and keeping defaults for missing ones.
+
+    A field whose value can't be used keeps its default, and a bad list item or dict entry is dropped, so one
+    broken value doesn't cost the rest of the settings. Each such repair is noted in ``problems``.
+    """
+    problems = problems if problems is not None else []
     if not isinstance(data, dict):
+        problems.append(f"{where or cls.__name__}: expected an object")
         return cls()
     hints = get_type_hints(cls)
     kwargs = {}
     for f in fields(cls):
         if f.name not in data:
             continue
-        kwargs[f.name] = _convert(hints[f.name], data[f.name])
+        try:
+            kwargs[f.name] = _convert(hints[f.name], data[f.name], problems, f"{where}.{f.name}".lstrip("."))
+        except (TypeError, ValueError, AttributeError) as e:
+            problems.append(f"{where}.{f.name}".lstrip(".") + f": {e}")
     return cls(**kwargs)
 
 
-def _convert(tp, value):
+def _convert(tp, value, problems: list[str], where: str):
     origin = get_origin(tp)
     if is_dataclass(tp):
-        return _from_dict(tp, value)
+        if not isinstance(value, dict):
+            raise TypeError("expected an object")
+        return _from_dict(tp, value, problems, where)
     if origin is list:
+        if not isinstance(value, list):
+            raise TypeError("expected a list")
         (item,) = get_args(tp)
-        return [_convert(item, v) for v in value]
+        return [v for v in (_convert_item(item, v, problems, f"{where}[{i}]") for i, v in enumerate(value))
+                if v is not _DROP]
     if origin is dict:
+        if not isinstance(value, dict):
+            raise TypeError("expected an object")
         _, item = get_args(tp)
-        return {k: _convert(item, v) for k, v in value.items()}
+        converted = {k: _convert_item(item, v, problems, f"{where}[{k!r}]") for k, v in value.items()}
+        return {k: v for k, v in converted.items() if v is not _DROP}
+    if tp in _SCALARS and not _scalar_ok(tp, value):
+        raise TypeError(f"expected {tp.__name__}, got {type(value).__name__}")
     return value
+
+
+def _scalar_ok(tp, value) -> bool:
+    if isinstance(value, bool):  # bool is an int subclass; only accept it where a bool is expected
+        return tp is bool
+    if tp is float:
+        return isinstance(value, (int, float))
+    return isinstance(value, tp)
+
+
+_DROP = object()
+
+
+def _convert_item(tp, value, problems: list[str], where: str):
+    try:
+        return _convert(tp, value, problems, where)
+    except (TypeError, ValueError, AttributeError) as e:
+        problems.append(f"{where}: {e}")
+        return _DROP
 
 
 def config_path() -> Path:
@@ -124,11 +166,24 @@ def config_path() -> Path:
 
 
 def load(path: Path | None = None) -> Settings:
+    """Read settings. A broken file is copied to ``settings.json.bad`` first, since the next save replaces it."""
     path = path or config_path()
     try:
-        return _from_dict(Settings, json.loads(path.read_text(encoding="utf-8")))
-    except (OSError, ValueError, TypeError):
+        text = path.read_text(encoding="utf-8")
+    except OSError:
         return Settings()
+    problems: list[str] = []
+    try:
+        settings = _from_dict(Settings, json.loads(text), problems)
+    except (ValueError, TypeError, AttributeError) as e:
+        problems.append(str(e))
+        settings = Settings()
+    if problems:
+        try:
+            shutil.copyfile(path, path.with_name(path.name + ".bad"))
+        except OSError:
+            pass
+    return settings
 
 
 def save(settings: Settings, path: Path | None = None) -> None:

@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from PySide6.QtCore import QRectF, QSize, Qt
-from PySide6.QtGui import QBrush, QColor, QImage, QImageReader, QPainter, QPainterPath, QPen, QPixmap
+from PySide6.QtGui import QBrush, QColor, QImage, QImageIOHandler, QImageReader, QPainter, QPainterPath, QPen, QPixmap
 from PySide6.QtWidgets import QSizePolicy, QWidget
 
 from ..processing.ratios import Ratio
@@ -47,11 +47,19 @@ class PreviewWidget(QWidget):
         if path is not None:
             reader = QImageReader(str(path))
             reader.setAutoTransform(True)  # honor EXIF orientation like the pipeline does
+            size = reader.size()  # stored (pre-rotation) size, read from the header without decoding
+            if size.isValid() and max(size.width(), size.height()) > THUMB_MAX:
+                # decode straight to preview size; JPEG in particular skips most of the work this way
+                reader.setScaledSize(size.scaled(THUMB_MAX, THUMB_MAX, Qt.AspectRatioMode.KeepAspectRatio))
             img = reader.read()
             if img.isNull():
                 self.message = f"Cannot preview: {reader.errorString()}"
             else:
-                self.source_size = (img.width(), img.height())
+                if size.isValid():
+                    rotated = bool(reader.transformation() & QImageIOHandler.Transformation.TransformationRotate90)
+                    self.source_size = (size.height(), size.width()) if rotated else (size.width(), size.height())
+                else:
+                    self.source_size = (img.width(), img.height())
                 if max(img.width(), img.height()) > THUMB_MAX:
                     img = img.scaled(THUMB_MAX, THUMB_MAX, Qt.AspectRatioMode.KeepAspectRatio,
                                      Qt.TransformationMode.SmoothTransformation)

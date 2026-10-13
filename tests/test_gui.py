@@ -123,3 +123,22 @@ def test_list_thumbnails_load(window, tmp_path, qapp):
         assert thumb is not None and not thumb.isNull()
     window._clear()
     assert not window._thumb_queue
+
+
+def test_file_list_locked_while_running(window, tmp_path, qapp):
+    from PySide6.QtCore import QEventLoop, QTimer
+
+    Image.new("RGB", (60, 40)).save(tmp_path / "a.png")
+    window.upscale_panel.enabled.setChecked(False)
+    window.add_paths([str(tmp_path / "a.png")])
+    window._run()
+    assert window.files.locked
+    assert not any(b.isEnabled() for b in (*window.file_buttons, *window.preset_controls))
+    window.add_paths([str(tmp_path / "a.png"), str(tmp_path)])  # e.g. a drop: ignored mid-run
+    assert window.files.count() == 1
+    loop = QEventLoop()
+    window.worker.finished.connect(loop.quit)
+    QTimer.singleShot(20000, loop.quit)
+    loop.exec()
+    qapp.processEvents()
+    assert not window.files.locked and all(b.isEnabled() for b in window.file_buttons)

@@ -37,25 +37,32 @@ class FileList(QListWidget):
     def __init__(self, on_paths, parent: QWidget | None = None):
         super().__init__(parent)
         self.on_paths = on_paths
+        self.locked = False  # set while a batch runs: rows map to batch indices and must not move
         self.setAcceptDrops(True)
         self.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self.setIconSize(QSize(THUMB_SIZE, THUMB_SIZE))
         self.setSpacing(1)
 
     def dragEnterEvent(self, e):
-        if e.mimeData().hasUrls():
+        if self.locked:
+            e.ignore()
+        elif e.mimeData().hasUrls():
             e.acceptProposedAction()
         else:
             super().dragEnterEvent(e)
 
     def dragMoveEvent(self, e):
-        if e.mimeData().hasUrls():
+        if self.locked:
+            e.ignore()
+        elif e.mimeData().hasUrls():
             e.acceptProposedAction()
         else:
             super().dragMoveEvent(e)
 
     def dropEvent(self, e):
-        if e.mimeData().hasUrls():
+        if self.locked:
+            e.ignore()
+        elif e.mimeData().hasUrls():
             self.on_paths([u.toLocalFile() for u in e.mimeData().urls() if u.isLocalFile()])
             e.acceptProposedAction()
         else:
@@ -148,7 +155,8 @@ class MainWindow(QMainWindow):
         remove.clicked.connect(self._remove_selected)
         clear.clicked.connect(self._clear)
         file_buttons = QHBoxLayout()
-        for b in (add_files, add_folder, remove, clear):
+        self.file_buttons = (add_files, add_folder, remove, clear)
+        for b in self.file_buttons:
             file_buttons.addWidget(b)
 
         self.preview_ratio = QComboBox()
@@ -178,6 +186,7 @@ class MainWindow(QMainWindow):
         delete_preset = QPushButton("Delete")
         save_preset.clicked.connect(self._save_preset)
         delete_preset.clicked.connect(self._delete_preset)
+        self.preset_controls = (self.preset_combo, save_preset, delete_preset)
         preset_row = QHBoxLayout()
         preset_title = QLabel("PRESET")
         preset_title.setObjectName("sectionTitle")
@@ -268,6 +277,7 @@ class MainWindow(QMainWindow):
         self.downloader.failed.connect(lambda msg: QMessageBox.warning(self, "Upscayl engine", msg))
         self.downloader.finished.connect(self._download_finished)
         self.upscale_panel.download.setText("Cancel download")
+        self.upscale_panel.engine_btn.setEnabled(False)
         self.run_btn.setEnabled(False)
         self.downloader.start()
 
@@ -297,10 +307,15 @@ class MainWindow(QMainWindow):
         self.progress.setValue(round(frac * 100))
 
     def _download_finished(self) -> None:
+        cancelled = self.downloader.cancel.is_set()
         self.downloader = None
         self.run_btn.setEnabled(True)
+        self.upscale_panel.engine_btn.setEnabled(True)
         self.progress.setValue(0)
-        self.status.setText("Engine ready" if self.engine.ready else "Engine not installed")
+        if cancelled:
+            self.status.setText("Download cancelled")
+        else:
+            self.status.setText("Engine ready" if self.engine.ready else "Engine not installed")
         self.upscale_panel.set_engine(self.engine)
         self._on_settings_changed()
 
@@ -316,6 +331,8 @@ class MainWindow(QMainWindow):
     # --- inputs ---------------------------------------------------------------
 
     def add_paths(self, paths: list[str]) -> None:
+        if self.files.locked:
+            return
         existing = {self.files.item(i).data(PATH_ROLE) for i in range(self.files.count())}
         added = 0
         for path in collect_inputs(paths):
@@ -485,9 +502,9 @@ class MainWindow(QMainWindow):
             w, h = self.preview.source_size  # already EXIF-rotated, like the pipeline sees it
             scale = preset.upscale.scale if preset.upscale.enabled else 1
             sizes = {}
-            for spec in preset.ratios:
+            for i, spec in enumerate(preset.ratios):
                 try:
-                    sizes[spec.ratio] = planned_size(w, h, spec, preset.fit.mode, scale)
+                    sizes[i] = planned_size(w, h, spec, preset.fit.mode, scale)
                 except ValueError:
                     pass
         try:
@@ -570,8 +587,10 @@ class MainWindow(QMainWindow):
     def _set_running(self, running: bool) -> None:
         self.run_btn.setEnabled(not running)
         self.cancel_btn.setEnabled(running)
-        for panel in (self.upscale_panel, self.ratio_panel, self.fit_panel, self.output_panel):
-            panel.setEnabled(not running)
+        for w in (self.upscale_panel, self.ratio_panel, self.fit_panel, self.output_panel,
+                  *self.file_buttons, *self.preset_controls):
+            w.setEnabled(not running)
+        self.files.locked = running
 
     def _cancel(self) -> None:
         if self.worker:

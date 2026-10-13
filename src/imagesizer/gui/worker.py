@@ -46,6 +46,6 @@ class DownloadWorker(QThread):
         try:
             self.engine.download(progress=self.progress.emit, cancel=self.cancel)
         except Cancelled:
-            self.failed.emit("Download cancelled")
+            pass  # the user asked for it; the window reports it without a warning box
         except Exception as e:
             self.failed.emit(f"Download failed: {e}")

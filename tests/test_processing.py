@@ -125,3 +125,34 @@ def test_resolve_folder(tmp_path):
     assert naming.resolve_folder(d, naming.FolderCollision.REUSE) == d
     assert naming.resolve_folder(d, naming.FolderCollision.SKIP) is None
     assert naming.resolve_folder(d, naming.FolderCollision.RENAME) == tmp_path / "beach_1"
+
+
+def test_resolve_folder_claimed_in_run_gets_number(tmp_path):
+    (tmp_path / "a").mkdir()
+    claimed = {tmp_path / "a"}
+    for policy in naming.FolderCollision:  # another image of this run owns "a": never share or skip it
+        assert naming.resolve_folder(tmp_path / "a", policy, claimed) == tmp_path / "a_1"
+    assert naming.resolve_folder(tmp_path / "a", naming.FolderCollision.REUSE, set()) == tmp_path / "a"
+
+
+def test_to_8bit_keeps_16bit_grey():
+    from imagesizer.processing.resize import to_8bit
+
+    out = to_8bit(Image.new("I;16", (2, 2), 32768))
+    assert out.mode == "L" and out.getpixel((0, 0)) == 128
+    assert to_8bit(Image.new("RGB", (1, 1))).mode == "RGB"
+
+
+def test_pad_palette_transparency_takes_pad_color():
+    p = Image.new("P", (4, 2))
+    p.putpalette([0, 0, 0, 255, 0, 0] + [0] * 762)
+    p.info["transparency"] = 0
+    p.paste(1, (0, 0, 2, 2))
+    out = fit_image(p, Ratio(1, 1), FitMode.PAD, pad_color=(255, 255, 255, 255))
+    assert out.getpixel((3, 1)) == (255, 255, 255) and out.getpixel((0, 1)) == (255, 0, 0)
+
+
+def test_pad_transparent_keeps_partial_alpha():
+    img = Image.new("RGBA", (4, 2), (255, 0, 0, 128))
+    out = fit_image(img, Ratio(1, 1), FitMode.PAD, pad_color=(0, 0, 0, 0))
+    assert out.getpixel((0, 1)) == (255, 0, 0, 128) and out.getpixel((0, 0))[3] == 0

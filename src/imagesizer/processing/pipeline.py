@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime as _dt
+import io
 import os
 import tempfile
 import threading
@@ -10,12 +11,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Iterable
 
-from PIL import Image, ImageOps
+from PIL import Image, ImageCms, ImageOps
 
 from ..config import Preset, RatioSpec
 from ..engine.upscayl import Cancelled, Engine
 from . import naming
-from .resize import ANCHORS, FitMode, crop_box, fit_image, pad_layout, target_size
+from .resize import ANCHORS, FitMode, crop_box, fit_image, has_alpha, pad_layout, target_size, to_8bit
 
 # Outputs of a 4x upscale routinely exceed Pillow's decompression-bomb limit; we produce them ourselves.
 Image.MAX_IMAGE_PIXELS = None
@@ -69,6 +70,7 @@ class Pipeline:
         self.engine = engine
         self.cancel = cancel or threading.Event()
         self.date = _dt.date.today().isoformat()
+        self._used_folders: set[Path] = set()  # folders already given to an image in this run
 
     # --- validation -------------------------------------------------------
 
@@ -116,21 +118,23 @@ class Pipeline:
             "model": up.model if up.enabled else "none",
         }
 
-    def preview_names(self, src: Path, index: int = 1, sizes: dict[str, tuple[int, int]] | None = None) -> tuple[str, list[str]]:
-        """Folder name and file names this preset would produce for ``src`` (no I/O). Raises TemplateError."""
+    def preview_names(self, src: Path, index: int = 1, sizes: dict[int, tuple[int, int]] | None = None) -> tuple[str, list[str]]:
+        """Folder name and file names this preset would produce for ``src`` (no I/O). Raises TemplateError.
+
+        ``sizes`` maps an index into ``preset.ratios`` to that row's output size."""
         out = self.preset.output
         tokens = self._tokens(src, index)
         folder = naming.render(out.folder_template, naming.FOLDER_TOKENS, **tokens)
         ext = FORMATS.get(out.format, ("", ".png"))[1]
         files = []
-        for r in self.preset.ratios:
+        for i, r in enumerate(self.preset.ratios):
             if not r.enabled:
                 continue
             try:
                 ratio = r.size().effective_ratio(r.parsed())
             except ValueError:
                 continue
-            w, h = (sizes or {}).get(r.ratio, ("W", "H"))
+            w, h = (sizes or {}).get(i, ("W", "H"))
             files.append(naming.render(out.file_template, naming.FILE_TOKENS, **tokens, ratio=ratio.slug, w=w, h=h) + ext)
         return folder, files
 
@@ -143,10 +147,12 @@ class Pipeline:
         created_folder = False
         try:
             folder_name = naming.render(p.output.folder_template, naming.FOLDER_TOKENS, **tokens)
-            folder = naming.resolve_folder(out_dir / folder_name, naming.FolderCollision(p.output.folder_collision))
+            folder = naming.resolve_folder(out_dir / folder_name, naming.FolderCollision(p.output.folder_collision),
+                                           self._used_folders)
             if folder is None:
                 result.skipped.append(f"folder {folder_name!r} already exists")
                 return result
+            self._used_folders.add(folder)
             result.folder = folder
 
             progress("Loading", 0.0)
@@ -155,7 +161,9 @@ class Pipeline:
                 icc = im.info.get("icc_profile")
                 exif = im.getexif()
                 orientation = exif.get(0x0112, 1)
-                base = ImageOps.exif_transpose(im)
+                base = to_8bit(ImageOps.exif_transpose(im))
+            if base.mode == "CMYK":
+                base, icc = _cmyk_to_rgb(base, icc), None
             if 0x0112 in exif:
                 exif[0x0112] = 1
             meta = {"icc": icc, "exif": exif} if p.output.keep_metadata else {}
@@ -235,20 +243,40 @@ class Pipeline:
         result.outputs.append(path)
 
 
+def _cmyk_to_rgb(img: Image.Image, icc: bytes | None) -> Image.Image:
+    """Color-manage CMYK through its embedded profile to sRGB; a naive convert gives washed-out colors."""
+    if icc:
+        try:
+            return ImageCms.profileToProfile(img, ImageCms.ImageCmsProfile(io.BytesIO(icc)),
+                                             ImageCms.createProfile("sRGB"), outputMode="RGB")
+        except (ImageCms.PyCMSError, OSError):
+            pass
+    return img.convert("RGB")
+
+
+def _icc_matches(icc: bytes, mode: str) -> bool:
+    """Whether an ICC profile's color space fits the image mode (GRAY for L/LA, RGB otherwise)."""
+    try:
+        space = ImageCms.ImageCmsProfile(io.BytesIO(icc)).profile.xcolor_space.strip()
+    except (ImageCms.PyCMSError, OSError, AttributeError):
+        return False
+    return space == ("GRAY" if mode in ("L", "LA") else "RGB")
+
+
 def save_image(img: Image.Image, path: Path, fmt: str, quality: int = 92,
                background: tuple[int, ...] = (255, 255, 255, 255), icc: bytes | None = None,
                exif: Image.Exif | None = None) -> None:
     """Convert to a mode the format supports and write atomically (temp file + rename)."""
-    has_alpha = img.mode in ("RGBA", "LA", "PA") or (img.mode == "P" and "transparency" in img.info)
+    alpha = has_alpha(img)
     if fmt == "JPEG":
-        if has_alpha:
+        if alpha:
             bg = Image.new("RGB", img.size, background[:3])
             bg.paste(img.convert("RGBA"), mask=img.convert("RGBA").getchannel("A"))
             img = bg
         elif img.mode not in ("RGB", "L"):
             img = img.convert("RGB")
     elif img.mode not in ("RGB", "RGBA", "L", "LA") or (fmt == "WEBP" and img.mode in ("L", "LA")):
-        img = img.convert("RGBA" if has_alpha else "RGB")
+        img = img.convert("RGBA" if alpha else "RGB")
 
     kwargs: dict = {}
     if fmt in ("JPEG", "WEBP"):
@@ -258,7 +286,7 @@ def save_image(img: Image.Image, path: Path, fmt: str, quality: int = 92,
         kwargs["optimize"] = True
     if fmt == "PNG":
         kwargs["compress_level"] = 6
-    if icc:
+    if icc and _icc_matches(icc, img.mode):
         kwargs["icc_profile"] = icc
     if exif is not None and len(exif):
         kwargs["exif"] = exif.tobytes()

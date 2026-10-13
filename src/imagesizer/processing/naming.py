@@ -84,7 +84,16 @@ def resolve_file(path: Path, policy: FileCollision, claimed: set[Path] | None = 
         i += 1
 
 
-def resolve_folder(path: Path, policy: FolderCollision) -> Path | None:
+def resolve_folder(path: Path, policy: FolderCollision, claimed: set[Path] | None = None) -> Path | None:
+    """Apply the collision policy. A folder in ``claimed`` belongs to another image of this run, so it is never
+    reused or skipped: that image gets the next numbered folder instead."""
+    if claimed and path in claimed:
+        i = 1
+        while True:
+            candidate = path.with_name(f"{path.name}_{i}")
+            if not candidate.exists() and candidate not in claimed:
+                return candidate
+            i += 1
     if not path.exists() or policy is FolderCollision.REUSE:
         return path
     if policy is FolderCollision.SKIP:
