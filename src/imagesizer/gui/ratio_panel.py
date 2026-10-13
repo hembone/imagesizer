@@ -7,6 +7,7 @@ from PySide6.QtWidgets import (
 
 from ..config import RatioSpec
 from ..processing.ratios import PRESETS, Ratio
+from . import theme
 
 SIZE_MODES = [("max", "Max resolution"), ("long_edge", "Long edge"), ("exact", "Exact size")]
 
@@ -16,7 +17,7 @@ def _spin(value: int) -> QSpinBox:
     s.setRange(1, 65535)
     s.setSuffix(" px")
     s.setValue(value)
-    return s
+    return theme.spin_box(s)
 
 
 class RatioRow(QWidget):
@@ -44,6 +45,7 @@ class RatioRow(QWidget):
         self.remove = QToolButton()
         self.remove.setText("✕")
         self.remove.setToolTip("Remove this ratio")
+        self.remove.setProperty("flat", True)
 
         row = QHBoxLayout(self)
         row.setContentsMargins(0, 0, 0, 0)
@@ -80,7 +82,7 @@ class RatioRow(QWidget):
 
     def _ratio_changed(self) -> None:
         valid = self._parsed() is not None
-        self.ratio.setStyleSheet("" if valid else "QComboBox { color: #d33; }")
+        self.ratio.setStyleSheet("" if valid else f"QComboBox {{ color: {theme.ERROR}; border-color: {theme.ERROR}; }}")
         if valid and self.mode.currentData() == "exact":
             self._width_changed(self.width.value())
 

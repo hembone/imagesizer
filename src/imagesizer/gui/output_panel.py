@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (
 
 from ..config import OutputSettings
 from ..processing.naming import FILE_TOKENS, FOLDER_TOKENS
+from . import theme
 
 
 def _combo(items: list[tuple[str, str]]) -> QComboBox:
@@ -33,7 +34,7 @@ class OutputPanel(QGroupBox):
         dir_row.addWidget(open_btn)
 
         self.format = _combo([("png", "PNG"), ("jpg", "JPEG"), ("webp", "WebP")])
-        self.quality = QSpinBox()
+        self.quality = theme.spin_box(QSpinBox())
         self.quality.setRange(1, 100)
         fmt_row = QHBoxLayout()
         fmt_row.addWidget(self.format)
@@ -48,6 +49,7 @@ class OutputPanel(QGroupBox):
         tokens = QLabel("Tokens: " + " ".join(f"{{{t}}}" for t in FILE_TOKENS)
                         + "\n{ratio}, {w}, {h} work in file names only.")
         tokens.setTextFormat(Qt.TextFormat.PlainText)
+        tokens.setObjectName("muted")
 
 
         self.folder_collision = _combo([("reuse", "Write into it"), ("rename", "Make a new numbered folder"),
@@ -59,6 +61,7 @@ class OutputPanel(QGroupBox):
         self.preview = QLabel()
         self.preview.setFont(QFontDatabase.systemFont(QFontDatabase.SystemFont.FixedFont))
         self.preview.setWordWrap(True)
+        self.preview.setObjectName("codeBlock")
         self.preview.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
 
         form = QFormLayout(self)
@@ -92,7 +95,7 @@ class OutputPanel(QGroupBox):
 
     def set_preview(self, folder: str, files: list[str], error: str | None) -> None:
         if error:
-            self.preview.setStyleSheet("color: #d33;")
+            self.preview.setStyleSheet(f"color: {theme.ERROR};")
             self.preview.setText(error)
             return
         self.preview.setStyleSheet("")

@@ -23,7 +23,10 @@ def window(tmp_path, monkeypatch, qapp):
 
 @pytest.fixture(scope="session")
 def qapp():
+    from imagesizer.gui import theme
+
     app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    theme.apply(app)  # build every test window under the real stylesheet
     yield app
 
 
@@ -105,3 +108,18 @@ def test_window_title_has_version(window):
     from imagesizer import __version__
 
     assert window.windowTitle() == f"ImageSizer {__version__}" and __version__ != "dev"
+
+
+def test_list_thumbnails_load(window, tmp_path, qapp):
+    from imagesizer.gui.main_window import THUMB_ROLE
+
+    Image.new("RGB", (300, 200), "blue").save(tmp_path / "a.png")
+    Image.new("RGB", (100, 400), "green").save(tmp_path / "b.jpg")
+    window.add_paths([str(tmp_path / "a.png"), str(tmp_path / "b.jpg")])
+    for _ in range(10):
+        qapp.processEvents()
+    for i in range(window.files.count()):
+        thumb = window.files.item(i).data(THUMB_ROLE)
+        assert thumb is not None and not thumb.isNull()
+    window._clear()
+    assert not window._thumb_queue

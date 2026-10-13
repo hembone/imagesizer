@@ -5,13 +5,25 @@ from __future__ import annotations
 from pathlib import Path
 
 from PySide6.QtCore import QRectF, QSize, Qt
-from PySide6.QtGui import QBrush, QColor, QImage, QImageReader, QPainter, QPen
+from PySide6.QtGui import QBrush, QColor, QImage, QImageReader, QPainter, QPainterPath, QPen, QPixmap
 from PySide6.QtWidgets import QSizePolicy, QWidget
 
 from ..processing.ratios import Ratio
 from ..processing.resize import crop_box, pad_layout
+from . import theme
 
 THUMB_MAX = 1200
+CHECKER = 8
+
+
+def _checkerboard() -> QPixmap:
+    pm = QPixmap(CHECKER * 2, CHECKER * 2)
+    pm.fill(QColor("#cfd2d8"))
+    p = QPainter(pm)
+    p.fillRect(0, 0, CHECKER, CHECKER, QColor("#a9adb5"))
+    p.fillRect(CHECKER, CHECKER, CHECKER, CHECKER, QColor("#a9adb5"))
+    p.end()
+    return pm
 
 
 class PreviewWidget(QWidget):
@@ -54,9 +66,16 @@ class PreviewWidget(QWidget):
 
     def paintEvent(self, event) -> None:
         p = QPainter(self)
-        p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
-        p.fillRect(self.rect(), self.palette().window())
+        p.setRenderHints(QPainter.RenderHint.SmoothPixmapTransform | QPainter.RenderHint.Antialiasing)
+        panel = QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5)
+        clip = QPainterPath()
+        clip.addRoundedRect(panel, 10, 10)
+        p.fillPath(clip, QColor(theme.BG))
+        p.setPen(QPen(QColor(theme.BORDER), 1))
+        p.drawPath(clip)
+        p.setClipPath(clip)
         if self.image is None:
+            p.setPen(QColor(theme.MUTED))
             p.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter | Qt.TextFlag.TextWordWrap, self.message)
             return
         iw, ih = self.image.width(), self.image.height()
@@ -64,7 +83,7 @@ class PreviewWidget(QWidget):
             cw, ch, ox, oy = pad_layout(iw, ih, self.ratio, self.anchor)
         else:
             cw, ch, ox, oy = iw, ih, 0, 0
-        scale = min((self.width() - 16) / cw, (self.height() - 16) / ch)
+        scale = min((self.width() - 32) / cw, (self.height() - 32) / ch)
         x0 = (self.width() - cw * scale) / 2
         y0 = (self.height() - ch * scale) / 2
         canvas = QRectF(x0, y0, cw * scale, ch * scale)
@@ -72,14 +91,14 @@ class PreviewWidget(QWidget):
 
         if self.ratio is not None and self.fit_mode == "pad":
             if self.pad_color is None:  # transparent: checkerboard
-                p.fillRect(canvas, QBrush(QColor("#ccc"), Qt.BrushStyle.Dense4Pattern))
+                p.fillRect(canvas, QBrush(_checkerboard()))
             else:
                 p.fillRect(canvas, self.pad_color)
         p.drawImage(img_rect, self.image)
 
         if self.ratio is None:
             return
-        pen = QPen(self.palette().highlight().color(), 2)
+        pen = QPen(QColor(theme.ACCENT), 2)
         if self.fit_mode == "crop":
             left, top, right, bottom = crop_box(iw, ih, self.ratio, self.anchor)
             box = QRectF(img_rect.x() + left * scale, img_rect.y() + top * scale,

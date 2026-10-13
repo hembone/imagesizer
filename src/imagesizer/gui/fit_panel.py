@@ -8,6 +8,7 @@ from PySide6.QtWidgets import (
 )
 
 from ..config import FitSettings
+from . import theme
 
 ANCHOR_GRID = [["top-left", "top", "top-right"], ["left", "center", "right"],
                ["bottom-left", "bottom", "bottom-right"]]
@@ -37,7 +38,7 @@ class FitPanel(QGroupBox):
                 b.setText(ANCHOR_ARROWS[name])
                 b.setToolTip(name)
                 b.setCheckable(True)
-                b.setFixedSize(28, 28)
+                b.setFixedSize(30, 30)
                 b.setProperty("anchor", name)
                 self.anchors.addButton(b)
                 grid.addWidget(b, r, c)
@@ -79,7 +80,9 @@ class FitPanel(QGroupBox):
         self._color = c
         self.color_btn.setText(c.name())
         fg = "#000" if c.lightness() > 128 else "#fff"
-        self.color_btn.setStyleSheet(f"background:{c.name()}; color:{fg};")
+        self.color_btn.setStyleSheet(f"QPushButton {{ background:{c.name()}; color:{fg}; "
+                                     f"border:1px solid {theme.BORDER}; border-radius:6px; }}"
+                                     f"QPushButton:disabled {{ color:{fg}; }}")
 
     def _update_enabled(self) -> None:
         pad = self.pad.isChecked()

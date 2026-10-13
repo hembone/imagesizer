@@ -3,8 +3,8 @@ from __future__ import annotations
 import copy
 from pathlib import Path
 
-from PySide6.QtCore import QSize, Qt, QTimer
-from PySide6.QtGui import QAction, QColor, QKeySequence, QPainter
+from PySide6.QtCore import QRectF, QSize, Qt, QTimer
+from PySide6.QtGui import QAction, QBrush, QColor, QImageReader, QKeySequence, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import (
     QAbstractItemView, QComboBox, QDialog, QDialogButtonBox, QFileDialog, QFormLayout, QHBoxLayout, QInputDialog,
     QLabel, QLayout, QLineEdit, QListWidget, QListWidgetItem, QMainWindow, QMessageBox, QProgressBar, QPushButton,
@@ -17,6 +17,7 @@ from ..engine.upscayl import Engine, default_engine_dir
 from ..processing.naming import TemplateError
 from ..processing.pipeline import INPUT_EXTENSIONS, ImageResult, Pipeline, collect_inputs, planned_size
 from ..processing.ratios import Ratio
+from . import theme
 from .fit_panel import FitPanel
 from .output_panel import OutputPanel
 from .preview import PreviewWidget
@@ -25,6 +26,9 @@ from .upscale_panel import UpscalePanel
 from .worker import BatchWorker, DownloadWorker
 
 PATH_ROLE = Qt.ItemDataRole.UserRole
+THUMB_ROLE = Qt.ItemDataRole.UserRole + 1
+THUMB_SIZE = 40
+THUMBS_PER_TICK = 4
 
 
 class FileList(QListWidget):
@@ -35,7 +39,8 @@ class FileList(QListWidget):
         self.on_paths = on_paths
         self.setAcceptDrops(True)
         self.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
-        self.setIconSize(QSize(16, 16))
+        self.setIconSize(QSize(THUMB_SIZE, THUMB_SIZE))
+        self.setSpacing(1)
 
     def dragEnterEvent(self, e):
         if e.mimeData().hasUrls():
@@ -60,8 +65,20 @@ class FileList(QListWidget):
         super().paintEvent(e)
         if self.count() == 0:
             p = QPainter(self.viewport())
-            p.setPen(self.palette().placeholderText().color())
-            p.drawText(self.viewport().rect(), Qt.AlignmentFlag.AlignCenter, "Drop images or folders here")
+            p.setRenderHint(QPainter.RenderHint.Antialiasing)
+            pen = QPen(QColor(theme.BORDER), 1.5, Qt.PenStyle.DashLine)
+            p.setPen(pen)
+            p.drawRoundedRect(QRectF(self.viewport().rect()).adjusted(8, 8, -8, -8), 8, 8)
+            rect = self.viewport().rect()
+            title = p.font()
+            title.setPointSizeF(title.pointSizeF() * 1.15)
+            title.setBold(True)
+            p.setFont(title)
+            p.setPen(QColor(theme.TEXT))
+            p.drawText(rect.adjusted(0, 0, 0, -24), Qt.AlignmentFlag.AlignCenter, "Drop images or folders here")
+            p.setFont(self.font())
+            p.setPen(QColor(theme.MUTED))
+            p.drawText(rect.adjusted(0, 24, 0, 0), Qt.AlignmentFlag.AlignCenter, "or use Add images… below")
 
 
 class EngineDialog(QDialog):
@@ -116,12 +133,14 @@ class MainWindow(QMainWindow):
         self.downloader: DownloadWorker | None = None
         self._loading = False
         self._save_timer = QTimer(self, singleShot=True, interval=600, timeout=self._save)
+        self._thumb_queue: list[QListWidgetItem] = []
+        self._thumb_timer = QTimer(self, interval=0, timeout=self._load_thumbs)
 
         # --- left: inputs + preview ---
         self.files = FileList(self.add_paths)
         self.files.currentItemChanged.connect(self._refresh_preview)
-        add_files = QPushButton("Add images…")
-        add_folder = QPushButton("Add folder…")
+        add_files = QPushButton(self.style().standardIcon(QStyle.StandardPixmap.SP_FileIcon), "Add images…")
+        add_folder = QPushButton(self.style().standardIcon(QStyle.StandardPixmap.SP_DirIcon), "Add folder…")
         remove = QPushButton("Remove")
         clear = QPushButton("Clear")
         add_files.clicked.connect(self._add_files_dialog)
@@ -136,12 +155,16 @@ class MainWindow(QMainWindow):
         self.preview_ratio.currentIndexChanged.connect(self._refresh_overlay)
         self.preview = PreviewWidget()
         preview_head = QHBoxLayout()
-        preview_head.addWidget(QLabel("Preview"))
+        preview_title = QLabel("PREVIEW")
+        preview_title.setObjectName("sectionTitle")
+        preview_head.addWidget(preview_title)
         preview_head.addStretch(1)
         preview_head.addWidget(self.preview_ratio)
 
         left = QWidget()
         lv = QVBoxLayout(left)
+        lv.setContentsMargins(16, 16, 8, 16)
+        lv.setSpacing(10)
         lv.addWidget(self.files, 2)
         lv.addLayout(file_buttons)
         lv.addLayout(preview_head)
@@ -156,7 +179,9 @@ class MainWindow(QMainWindow):
         save_preset.clicked.connect(self._save_preset)
         delete_preset.clicked.connect(self._delete_preset)
         preset_row = QHBoxLayout()
-        preset_row.addWidget(QLabel("Preset"))
+        preset_title = QLabel("PRESET")
+        preset_title.setObjectName("sectionTitle")
+        preset_row.addWidget(preset_title)
         preset_row.addWidget(self.preset_combo, 1)
         preset_row.addWidget(save_preset)
         preset_row.addWidget(delete_preset)
@@ -174,6 +199,8 @@ class MainWindow(QMainWindow):
         settings_box = QWidget()
         rv = QVBoxLayout(settings_box)
         rv.setSizeConstraint(QLayout.SizeConstraint.SetMinimumSize)  # scroll instead of squashing rows
+        rv.setContentsMargins(8, 16, 16, 16)
+        rv.setSpacing(12)
         rv.addLayout(preset_row)
         for panel in (self.upscale_panel, self.ratio_panel, self.fit_panel, self.output_panel):
             rv.addWidget(panel)
@@ -190,15 +217,22 @@ class MainWindow(QMainWindow):
 
         # --- bottom: run bar ---
         self.progress = QProgressBar()
-        self.progress.setTextVisible(True)
+        self.progress.setTextVisible(False)
         self.status = QLabel("Ready")
+        self.status.setObjectName("muted")
         self.run_btn = QPushButton("Process images")
         self.run_btn.setDefault(True)
+        self.run_btn.setProperty("primary", True)
         self.cancel_btn = QPushButton("Cancel")
         self.cancel_btn.setEnabled(False)
         self.run_btn.clicked.connect(self._run)
         self.cancel_btn.clicked.connect(self._cancel)
-        bottom = QHBoxLayout()
+        run_bar = QWidget()
+        run_bar.setObjectName("runBar")
+        run_bar.setAttribute(Qt.WidgetAttribute.WA_StyledBackground)
+        bottom = QHBoxLayout(run_bar)
+        bottom.setContentsMargins(16, 12, 16, 12)
+        bottom.setSpacing(12)
         bottom.addWidget(self.status, 2)
         bottom.addWidget(self.progress, 3)
         bottom.addWidget(self.cancel_btn)
@@ -206,8 +240,10 @@ class MainWindow(QMainWindow):
 
         central = QWidget()
         cv = QVBoxLayout(central)
+        cv.setContentsMargins(0, 0, 0, 0)
+        cv.setSpacing(0)
         cv.addWidget(splitter, 1)
-        cv.addLayout(bottom)
+        cv.addWidget(run_bar)
         self.setCentralWidget(central)
 
         quit_action = QAction("Quit", self, shortcut=QKeySequence.StandardKey.Quit, triggered=self.close)
@@ -288,12 +324,62 @@ class MainWindow(QMainWindow):
             item = QListWidgetItem(path.name)
             item.setData(PATH_ROLE, str(path))
             item.setToolTip(str(path))
+            item.setIcon(theme.icon(self._blank_thumb()))
             self.files.addItem(item)
+            self._thumb_queue.append(item)
             added += 1
+        if self._thumb_queue:
+            self._thumb_timer.start()
         if added and self.files.currentRow() < 0:
             self.files.setCurrentRow(0)
         self.status.setText(f"{self.files.count()} images")
         self._update_names()
+
+    def _blank_thumb(self) -> QPixmap:
+        pm = QPixmap(THUMB_SIZE, THUMB_SIZE)
+        pm.fill(Qt.GlobalColor.transparent)
+        p = QPainter(pm)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QBrush(QColor(theme.SURFACE_2)))
+        p.drawRoundedRect(QRectF(pm.rect()), 6, 6)
+        p.end()
+        return pm
+
+    def _load_thumbs(self) -> None:
+        """Fill list thumbnails a few at a time so adding a big folder doesn't freeze the window."""
+        for _ in range(THUMBS_PER_TICK):
+            if not self._thumb_queue:
+                self._thumb_timer.stop()
+                return
+            item = self._thumb_queue.pop(0)
+            if item.listWidget() is None:  # removed before we got to it
+                continue
+            reader = QImageReader(item.data(PATH_ROLE))
+            reader.setAutoTransform(True)
+            size = reader.size()
+            if size.isValid():
+                reader.setScaledSize(size.scaled(THUMB_SIZE * 2, THUMB_SIZE * 2, Qt.AspectRatioMode.KeepAspectRatio))
+            img = reader.read()
+            if img.isNull():
+                continue
+            # center-crop to a rounded square so every row lines up
+            side = min(img.width(), img.height())
+            img = img.copy((img.width() - side) // 2, (img.height() - side) // 2, side, side)
+            pm = QPixmap(THUMB_SIZE, THUMB_SIZE)
+            pm.fill(Qt.GlobalColor.transparent)
+            p = QPainter(pm)
+            p.setRenderHints(QPainter.RenderHint.Antialiasing | QPainter.RenderHint.SmoothPixmapTransform)
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(QBrush(img.scaled(THUMB_SIZE, THUMB_SIZE, Qt.AspectRatioMode.IgnoreAspectRatio,
+                                         Qt.TransformationMode.SmoothTransformation)))
+            p.drawRoundedRect(QRectF(pm.rect()), 6, 6)
+            p.end()
+            item.setData(THUMB_ROLE, pm)
+            item.setIcon(theme.icon(pm))
+
+    def _thumb(self, item: QListWidgetItem) -> QPixmap:
+        return item.data(THUMB_ROLE) or self._blank_thumb()
 
     def _add_files_dialog(self) -> None:
         exts = " ".join(f"*{e}" for e in sorted(INPUT_EXTENSIONS))
@@ -307,10 +393,13 @@ class MainWindow(QMainWindow):
 
     def _remove_selected(self) -> None:
         for item in self.files.selectedItems():
+            if item in self._thumb_queue:
+                self._thumb_queue.remove(item)
             self.files.takeItem(self.files.row(item))
         self._update_names()
 
     def _clear(self) -> None:
+        self._thumb_queue.clear()
         self.files.clear()
         self.preview.set_image(None)
         self._update_names()
@@ -463,11 +552,11 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Can't start", "\n".join(f"• {e}" for e in errors))
             return
         self._save()
-        icon = self.style().standardIcon(QStyle.StandardPixmap.SP_FileIcon)
         for i in range(self.files.count()):
             item = self.files.item(i)
             item.setText(Path(item.data(PATH_ROLE)).name)
-            item.setIcon(icon)
+            item.setIcon(theme.icon(self._thumb(item)))
+            item.setData(Qt.ItemDataRole.ForegroundRole, None)
         self.results: list[ImageResult] = []
         self.worker = BatchWorker(files, preset, self.engine)
         self.worker.file_started.connect(self._file_started)
@@ -503,11 +592,12 @@ class MainWindow(QMainWindow):
         item = self.files.item(i)
         name = Path(item.data(PATH_ROLE)).name
         if res.error:
-            item.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MessageBoxCritical))
+            item.setIcon(theme.icon(theme.badge(self._thumb(item), theme.ERROR, "!")))
+            item.setForeground(QColor(theme.ERROR))
             item.setText(f"{name} — {res.error.splitlines()[0]}")
             item.setToolTip(res.error)
         else:
-            item.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_DialogApplyButton))
+            item.setIcon(theme.icon(theme.badge(self._thumb(item), theme.OK, "✓")))
             note = f" ({len(res.skipped)} skipped)" if res.skipped else ""
             item.setText(f"{name} — {len(res.outputs)} files{note}")
             item.setToolTip("\n".join([str(res.folder)] + [f"skipped: {s}" for s in res.skipped]))

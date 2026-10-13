@@ -7,6 +7,7 @@ from PySide6.QtWidgets import (
 
 from ..config import UpscaleSettings
 from ..engine.upscayl import MODELS, Engine
+from . import theme
 
 
 class UpscalePanel(QGroupBox):
@@ -24,7 +25,7 @@ class UpscalePanel(QGroupBox):
         self.gpu = QLineEdit()
         self.gpu.setPlaceholderText("auto")
         self.gpu.setToolTip("GPU device id (0, 1, …). Leave empty for automatic.")
-        self.tile = QSpinBox()
+        self.tile = theme.spin_box(QSpinBox())
         self.tile.setRange(0, 4096)
         self.tile.setSingleStep(32)
         self.tile.setSpecialValueText("auto")
@@ -68,11 +69,13 @@ class UpscalePanel(QGroupBox):
         self.model.blockSignals(False)
 
         if engine.ready:
-            self.status.setText(f"Engine ready · {len(installed)} models")
+            self.status.setText(f"● Engine ready · {len(installed)} models")
+            theme.set_state(self.status, "state", "ok")
             self.download.setVisible(len(installed) < len(MODELS))
             self.download.setText("Download missing models")
         else:
-            self.status.setText("Engine not installed" if not engine.has_binary else "No models installed")
+            self.status.setText("○ Engine not installed" if not engine.has_binary else "○ No models installed")
+            theme.set_state(self.status, "state", "off")
             self.download.setVisible(True)
             self.download.setText("Download engine")
 

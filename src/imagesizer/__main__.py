@@ -7,12 +7,13 @@ def main() -> int:
     from PySide6.QtGui import QIcon
     from PySide6.QtWidgets import QApplication
 
+    from .gui import theme
     from .gui.main_window import MainWindow
 
     app = QApplication(sys.argv)
     app.setApplicationName("ImageSizer")
     app.setOrganizationName("imagesizer")
-    app.setStyle("Fusion")  # same look on Linux, Windows and macOS
+    theme.apply(app)
     app.setWindowIcon(QIcon(str(files("imagesizer") / "resources" / "icon.png")))
     app.setDesktopFileName("imagesizer")  # matches the .desktop entry so Linux docks show the right icon
     win = MainWindow()
