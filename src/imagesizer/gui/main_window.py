@@ -140,7 +140,9 @@ class MainWindow(QMainWindow):
         self.downloader: DownloadWorker | None = None
         self._loading = False
         self._save_timer = QTimer(self, singleShot=True, interval=600, timeout=self._save)
-        self._thumb_queue: list[QListWidgetItem] = []
+        # Next row to give a thumbnail. A row cursor rather than a list of items: Python references to items the
+        # list owns can be freed twice when a window is garbage-collected.
+        self._thumb_row = 0
         self._thumb_timer = QTimer(self, interval=0, timeout=self._load_thumbs)
 
         # --- left: inputs + preview ---
@@ -308,6 +310,7 @@ class MainWindow(QMainWindow):
 
     def _download_finished(self) -> None:
         cancelled = self.downloader.cancel.is_set()
+        self.downloader.wait()  # `finished` fires just before the thread exits; never free a running QThread
         self.downloader = None
         self.run_btn.setEnabled(True)
         self.upscale_panel.engine_btn.setEnabled(True)
@@ -343,9 +346,8 @@ class MainWindow(QMainWindow):
             item.setToolTip(str(path))
             item.setIcon(theme.icon(self._blank_thumb()))
             self.files.addItem(item)
-            self._thumb_queue.append(item)
             added += 1
-        if self._thumb_queue:
+        if added:
             self._thumb_timer.start()
         if added and self.files.currentRow() < 0:
             self.files.setCurrentRow(0)
@@ -365,13 +367,17 @@ class MainWindow(QMainWindow):
 
     def _load_thumbs(self) -> None:
         """Fill list thumbnails a few at a time so adding a big folder doesn't freeze the window."""
-        for _ in range(THUMBS_PER_TICK):
-            if not self._thumb_queue:
+        loaded = 0
+        while loaded < THUMBS_PER_TICK:
+            if self._thumb_row >= self.files.count():
                 self._thumb_timer.stop()
                 return
-            item = self._thumb_queue.pop(0)
-            if item.listWidget() is None:  # removed before we got to it
+            item = self.files.item(self._thumb_row)
+            self._thumb_row += 1
+            if item.data(THUMB_ROLE) is not None:  # done already (False marks one that couldn't be read)
                 continue
+            loaded += 1
+            item.setData(THUMB_ROLE, False)
             reader = QImageReader(item.data(PATH_ROLE))
             reader.setAutoTransform(True)
             size = reader.size()
@@ -410,13 +416,15 @@ class MainWindow(QMainWindow):
 
     def _remove_selected(self) -> None:
         for item in self.files.selectedItems():
-            if item in self._thumb_queue:
-                self._thumb_queue.remove(item)
             self.files.takeItem(self.files.row(item))
+        self._thumb_row = 0  # rows shifted; rows that are done get skipped cheaply
+        if self.files.count():
+            self._thumb_timer.start()
         self._update_names()
 
     def _clear(self) -> None:
-        self._thumb_queue.clear()
+        self._thumb_row = 0
+        self._thumb_timer.stop()
         self.files.clear()
         self.preview.set_image(None)
         self._update_names()
@@ -623,6 +631,8 @@ class MainWindow(QMainWindow):
 
     def _batch_finished(self) -> None:
         cancelled = self.worker.cancel.is_set() if self.worker else False
+        if self.worker:
+            self.worker.wait()  # `finished` fires just before the thread exits; never free a running QThread
         self.worker = None
         self._set_running(False)
         ok = sum(1 for r in self.results if not r.error)

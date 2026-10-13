@@ -1,5 +1,6 @@
 """Offscreen GUI checks: window builds, inputs load, name preview and run/validation wiring."""
 
+import gc
 import os
 
 import pytest
@@ -19,6 +20,14 @@ def window(tmp_path, monkeypatch, qapp):
     w.output_panel.directory.setText(str(tmp_path / "out"))
     yield w
     w.close()
+    if w.worker is not None:
+        w.worker.cancel.set()
+        w.worker.wait()
+    # Tear the window down here rather than whenever a later test happens to trigger garbage collection.
+    w.deleteLater()
+    QtWidgets.QApplication.sendPostedEvents(None, 0)
+    qapp.processEvents()
+    gc.collect()
 
 
 @pytest.fixture(scope="session")
@@ -122,7 +131,7 @@ def test_list_thumbnails_load(window, tmp_path, qapp):
         thumb = window.files.item(i).data(THUMB_ROLE)
         assert thumb is not None and not thumb.isNull()
     window._clear()
-    assert not window._thumb_queue
+    assert window._thumb_row == 0 and not window._thumb_timer.isActive()
 
 
 def test_file_list_locked_while_running(window, tmp_path, qapp):
