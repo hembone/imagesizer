@@ -76,7 +76,14 @@ QSpinBox::down-button {{ subcontrol-position: bottom right; border-bottom-right-
 QSpinBox::up-button:hover, QSpinBox::down-button:hover {{ background: {SURFACE_3}; }}
 QSpinBox::up-arrow {{ image: url({_RES}/arrow-up.svg); width: 9px; height: 6px; }}
 QSpinBox::down-arrow {{ image: url({_RES}/arrow-down.svg); width: 9px; height: 6px; }}
-QSpinBox::up-arrow:disabled, QSpinBox::down-arrow:disabled {{ image: none; }}
+QSpinBox::up-arrow:disabled {{ image: url({_RES}/arrow-up-disabled.svg); }}
+QSpinBox::down-arrow:disabled {{ image: url({_RES}/arrow-down-disabled.svg); }}
+QComboBox {{ padding-right: 26px; }}
+QComboBox::drop-down {{
+    subcontrol-origin: padding; subcontrol-position: center right; width: 24px; border: none; background: transparent;
+}}
+QComboBox::down-arrow {{ image: url({_RES}/arrow-down.svg); width: 9px; height: 6px; }}
+QComboBox::down-arrow:disabled {{ image: url({_RES}/arrow-down-disabled.svg); }}
 QComboBox QAbstractItemView {{
     background: {SURFACE_2}; border: 1px solid {BORDER}; selection-background-color: {ACCENT}; outline: 0;
 }}
